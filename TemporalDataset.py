@@ -11,9 +11,12 @@ class TemporalDataset:
     """handle dataset"""
 
     def __init__(self, dst_name:str):
+        """
+        dst_name: ['synthetic']
+        """
         self.dst_name = 'synthetic'
 
-    def load_dataset(self):
+    def __load_dataset__(self):
         
         if self.dst_name == 'synthetic':
             data_path_head = './synth_temporal_data'
@@ -25,7 +28,7 @@ class TemporalDataset:
 
         return self.data
 
-    def temporal_cut(self, masking_dec:float):
+    def __temporal_cut__(self, masking_dec:float):
         """
         masking_dec = 0.15 : decimal, how much we want to mask. 
         """
@@ -43,7 +46,7 @@ class TemporalDataset:
         return self.filtered_data, self.real_timesteps_kept
     
 
-    def trainval(self, train_split=0.8):
+    def __trainvalsplit__(self, train_split=0.8):
         """
         If train=True, training split, else: val
         """
@@ -57,8 +60,11 @@ class TemporalDataset:
         self.val_data = self.data[num_train:]
         self.real_timesteps_kept_val = self.real_timesteps_kept[num_train:]
 
-        # Create triplets (current_frame, prev_frame, delta_t)
-        # delta_t = t(current-prev)
+    def prepare_dataset(self,masking_dec:float, train_split=0.8):
+        self.__load_dataset__()
+        self.__temporal_cut__(masking_dec)
+        self.__trainvalsplit__(train_split=train_split)
+
 
 
     def create_triplets(self, train:bool, max_gap=None, gap_weights = 'exponential'):
@@ -69,16 +75,18 @@ class TemporalDataset:
 
         triplets = []
 
-        if train: 
-            data = self.train_data
-            timesteps = self.real_timesteps_kept_train
 
-        else: 
-            data = self.val_data
-            timesteps = self.real_timesteps_kept_val
+        data = self.train_data if train else self.val_data
 
 
         for patient_idx in range(data.shape[0]):
+
+            if train: 
+                timesteps = self.real_timesteps_kept_train[patient_idx] # self.real_timesteps_kept_train shape: (patients, length of sequence)
+
+            else: 
+                timesteps = self.real_timesteps_kept_val[patient_idx]
+            
             n_times = len(timesteps)
 
             # for each valid current frame, sample a previous frame
@@ -99,18 +107,57 @@ class TemporalDataset:
                 else: 
                     prev_idx = np.random.choice(valid_prev)
             
-            curr_frame = self.train_data[patient_idx, curr_idx]
-            prev_frame = self.train_data[patient_idx, prev_idx]
+            curr_frame = data[patient_idx, curr_idx]
+            prev_frame = data[patient_idx, prev_idx]
 
             # delta_t difference in frames
             delta_t = timesteps[curr_idx] - timesteps[prev_idx]
 
+
             triplets.append((curr_frame, prev_frame, delta_t))
 
         return triplets
+    
+    def visualise_triplet(self, triplets, num_samples=5, figsize=(15, 3)):
+        """
+        Visualise a few triplets showing previous and current frames with delta_t.
 
+        Args:
+            triplets: List of (current_frame, prev_frame, delta_t) tuples
+            num_samples: Number of triplets to visualize
+            figsize: Figure size for each row of visualization
+        """
+        num_samples = min(num_samples, len(triplets))
 
+        for i in range(num_samples):
+            curr_frame, prev_frame, delta_t = triplets[i]
 
+            fig, axes = plt.subplots(1, 2, figsize=figsize)
+
+            # Normalize images to [0, 1] range for display
+            def normalize_image(img):
+                img = img.astype(np.float32)
+                img_min, img_max = img.min(), img.max()
+                if img_max > img_min:
+                    img = (img - img_min) / (img_max - img_min)
+                return np.clip(img, 0, 1)
+
+            # Display previous frame
+            axes[0].imshow(normalize_image(prev_frame))
+            axes[0].set_title(f'Previous Frame', fontsize=12, fontweight='bold')
+            axes[0].axis('off')
+
+            # Display current frame
+            axes[1].imshow(normalize_image(curr_frame))
+            axes[1].set_title(f'Current Frame', fontsize=12, fontweight='bold')
+            axes[1].axis('off')
+
+            # Add delta_t as figure title
+            fig.suptitle(f'Triplet {i+1} | Δt = {delta_t} timesteps',
+                        fontsize=14, fontweight='bold', y=1.02)
+
+            plt.tight_layout()
+            plt.show()
 
         
 
