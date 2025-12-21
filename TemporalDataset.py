@@ -12,23 +12,29 @@ class TemporalDataset:
 
     def __init__(self, dst_name:str):
         """
-        dst_name: ['synthetic']
+        dst_name: ['synth0', 'synth1']
         """
-        self.dst_name = 'synthetic'
+        self.dst_name = dst_name
 
-    def __load_dataset__(self):
+    def _load_dataset(self):
+
+        ## TODO: handle greyscale & RGB
         
-        if self.dst_name == 'synthetic':
-            data_path_head = './synth_temporal_data'
+        if self.dst_name == 'synth0':
+            data_path_head = './toy_problem_data0'
             image_data = os.path.join(data_path_head, "images.npy")
             # data.shape (500, 20, 32, 32, 3), (Patients, timesteps, pixel, pixel, RGB)
+
+        if self.dst_name == 'synth1':
+            data_path_head = './toy_problem_data1'
+            image_data = os.path.join(data_path_head, "images.npy")
             
         self.data = np.load(image_data)
         
 
         return self.data
 
-    def __temporal_cut__(self, masking_dec:float):
+    def _temporal_cut(self, masking_dec:float):
         """
         masking_dec = 0.15 : decimal, how much we want to mask. 
         """
@@ -46,7 +52,7 @@ class TemporalDataset:
         return self.filtered_data, self.real_timesteps_kept
     
 
-    def __trainvalsplit__(self, train_split=0.8):
+    def _trainvalsplit(self, train_split=0.8):
         """
         If train=True, training split, else: val
         """
@@ -61,9 +67,9 @@ class TemporalDataset:
         self.real_timesteps_kept_val = self.real_timesteps_kept[num_train:]
 
     def prepare_dataset(self,masking_dec:float, train_split=0.8):
-        self.__load_dataset__()
-        self.__temporal_cut__(masking_dec)
-        self.__trainvalsplit__(train_split=train_split)
+        self._load_dataset()
+        self._temporal_cut(masking_dec)
+        self._trainvalsplit(train_split=train_split)
 
 
 
@@ -121,6 +127,7 @@ class TemporalDataset:
     def visualise_triplet(self, triplets, num_samples=5, figsize=(15, 3)):
         """
         Visualise a few triplets showing previous and current frames with delta_t.
+        Handles both greyscale and RGB datasets automatically.
 
         Args:
             triplets: List of (current_frame, prev_frame, delta_t) tuples
@@ -142,13 +149,33 @@ class TemporalDataset:
                     img = (img - img_min) / (img_max - img_min)
                 return np.clip(img, 0, 1)
 
+            # Detect if greyscale or RGB
+            # Greyscale: shape (H, W) or (H, W, 1)
+            # RGB: shape (H, W, 3)
+            is_greyscale = prev_frame.ndim == 2 or (prev_frame.ndim == 3 and prev_frame.shape[2] == 1)
+
+            # Prepare images for display
+            prev_normalized = normalize_image(prev_frame)
+            curr_normalized = normalize_image(curr_frame)
+
+            # Squeeze channel dimension if greyscale with shape (H, W, 1)
+            if prev_frame.ndim == 3 and prev_frame.shape[2] == 1:
+                prev_normalized = prev_normalized.squeeze(-1)
+                curr_normalized = curr_normalized.squeeze(-1)
+
             # Display previous frame
-            axes[0].imshow(normalize_image(prev_frame))
+            if is_greyscale:
+                axes[0].imshow(prev_normalized, cmap='gray')
+            else:
+                axes[0].imshow(prev_normalized)
             axes[0].set_title(f'Previous Frame', fontsize=12, fontweight='bold')
             axes[0].axis('off')
 
             # Display current frame
-            axes[1].imshow(normalize_image(curr_frame))
+            if is_greyscale:
+                axes[1].imshow(curr_normalized, cmap='gray')
+            else:
+                axes[1].imshow(curr_normalized)
             axes[1].set_title(f'Current Frame', fontsize=12, fontweight='bold')
             axes[1].axis('off')
 
@@ -158,6 +185,10 @@ class TemporalDataset:
 
             plt.tight_layout()
             plt.show()
+
+    
+
+
 
         
 
